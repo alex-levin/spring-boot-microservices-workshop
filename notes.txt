@@ -1,0 +1,179 @@
+https://youtu.be/ZvSRcsdqpsk
+https://github.com/koushikkothagal/spring-boot-microservices-workshop
+
+Create 3 Spring Boot projects: Movie Info Service, Ratings Data Service, Movie Catalog Service.
+
+start.spring.io
+Group: io.javabrains
+Artifact: movie-catalog-service
+Name: movie-catalog-service
+Dependency: Web
+Package Name: io.javabrains.moviecatalogservice
+Packajing: Jar
+Java Version: 11
+
+We are going with bare minimum - only 1 dependency - not to get lost.
+
+Do the same using Artifacts movie-info-service and ratings-data-service.
+
+https://github.com/koushikkothagal/spring-boot-microservices-workshop
+https://github.com/alex-levin/spring-boot-microservices-workshop
+Click on 12 commits (under the Code green button on the right).
+01. Init 3 projects						6922689afa93a2a74f52395c17d525f51845d205
+02. Added Movie Catalog Service API		b71047a10fa9bceb45035d67cec4b5361e217d13
+03. Added Movie Info API				c38f986b9b56d91dd751980bad2675547173c1bb
+04. Set application properties			c14f4d67d6b7464b387b5cb313aa3683850977cc
+...
+
+C:\Users\Alex\code\spring-boot-microservices-workshop>git checkout 6922689afa93a2a74f52395c17d525f51845d205
+HEAD is now at 6922689 01. Init 3 projects
+
+04. Set application properties
+Configuring different ports to run services simultaneously
+C:\Users\Alex\code\spring-boot-microservices-workshop\movie-info-service\src\main\resources\application.properties:
+spring.application.name=movie-info-service
+server.port=8082
+
+C:\Users\Alex\code\spring-boot-microservices-workshop\movie-catalog-service\src\main\resources\application.properties:
+spring.application.name=movie-catalog-service
+server.port=8081
+
+C:\Users\Alex\code\spring-boot-microservices-workshop\ratings-data-service\src\main\resources\application.properties:
+spring.application.name=ratings-data-service
+server.port=8083
+
+Recommends not to have any service port 8080 to avoid any future collisions.
+
+How to make a call from Movie Catalog Service to Movie Info Service?
+> Calling REAST API programmatically?
+> Using REST client library?
+> Spring Boot comes with a client librarys already in your classpath - RestTemplate.
+
+It will be deprecated:
+https://docs.spring.io/spring/docs/current/javadoc-api/org/springframework/web/client/RestTemplate.html
+NOTE: As of 5.0 this class is in maintenance mode, with only minor requests for changes and bugs to be
+accepted going forward. Please, consider using the org.springframework.web.reactive.client.WebClient which
+has a more modern API and supports sync, async, and streaming scenarios.
+
+WebClient is more verbose than RestTemplate. It supports asynchronous (reactive) calls and requires
+callback function implementation (lambda).
+We tell WebClient what to do (e.g. retrieve data) and provide a lambda that is executed when the data is received.
+The lambda tells what to do with the received data.
+To get WebClient in the classpath, we added in pom.xml
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webflux</artifactId>
+		</dependency>
+
+CatalogResource :
+	@Autowired
+	WebClient.Builder webClientBuilder;	
+	
+	Movie movie = webClientBuilder.build().get().uri("http://localhost:8082/movies/"+ rating.getMovieId())
+	.retrieve().bodyToMono(Movie.class).block();	
+	
+MovieCatalogServiceApplication:
+	@Bean
+	public WebClienr.Builder getWebClientBuilder() {
+		return WebClient.builder();
+	}	
+	
+bodyToMono(Movie.class) - whatever body you got, convert it to the Movie class	
+Mono means we are getting this in the future (like Promise).
+We are getting back an asynchronous object. It's not what we want here. In the future we are going to get what we want.
+.block() blocks the excution waiting for the response.
+Here we are using asynchronous programming constructs to do a synchronous programming.
+		
+
+But for now RestTemplate is used everywhere. WebClient is the future.
+
+CatalogResource.java:
+/*
+Alternative WebClient way
+Movie movie = webClientBuilder.build().get().uri("http://localhost:8082/movies/"+ rating.getMovieId())
+.retrieve().bodyToMono(Movie.class).block();
+*/
+
+It is perfectly OK to have class copies in microservices (e.g. Movie).
+Microservices are independent. In one microservice, we can add more properties to that class if needed
+without adding them in another class in another microservice.
+If we need to remove or rename a property, we need to communicate this to people
+developing other microservice if the class is no longer backward compatible.
+
+How about using abstarct classes or interfaces and sharing those
+between microservices?
+
+When marshalling and unmarshalling Java object (Movie), we need to have an empty constructor.
+
+localhost:8081/catalog/foo
+
+RatingsResource:
+@RequestMapping("users/{userId}")
+public List<Raiting> getUserRatings(@PathVariable("userId") String userId) {
+	List<Raiting> retings = Arrays.asList(
+		new Rating("1234", 3),
+		new Rating("5678", 4)
+    )
+}
+What's wrong returning List<Raiting>?
+localhost:8083/ratingsdata/users/foo
+Returns
+[{"movieId":"1234", "rating":3},{"movieId":"5678", "rating":4}]
+JSON's root is a list. What's the problem with any API returning list as a root?
+We need to have an object wrapper with the list. The reason is if we need to add a global property
+to the returned object, we cannot do it with the list.
+If we have a wrapper object containing the list, we can always add an extra property
+and it still will be backward compatible - nothing will break for those clients that don'tellneed this extra property.
+
+Another reason is if we need a REST service to retrieve a list of objects.
+RestTemplate:
+public <T> T getForObject(URI url, Class<T> responseType)
+We cannot pass List<Rating> as a second argument. We would need to use ParameterizedType:
+List<Rating> ratings = restTemplate.getForObject(
+	"http://localhost:8083/ratingsdata/users/" + userId,  
+	ParameterizedType<List<Rating>>)
+We would need to create an implementation of the ParameterizedType interface.
+https://docs.oracle.com/javase/8/docs/api/java/lang/reflect/ParameterizedType.html
+Too complicated.
+We are using UserRating wrapper.
+
+Build and Run:
+cd C:\Users\Alex\code\spring-boot-microservices-workshop\spring-boot-microservices-workshop
+git checkout dfdcc43e2f865138b6df32c23e12c44ed6e7fcd2
+
+cd C:\Users\Alex\code\spring-boot-microservices-workshop\spring-boot-microservices-workshop\movie-catalog-service
+mvn package
+java -jar target\movie-catalog-service-0.0.1-SNAPSHOT.jar
+
+cd cd C:\Users\Alex\code\spring-boot-microservices-workshop\spring-boot-microservices-workshop\movie-info-service
+mvn package
+java -jar target\movie-info-service-0.0.1-SNAPSHOT.jar
+
+cd C:\Users\Alex\code\spring-boot-microservices-workshop\spring-boot-microservices-workshop\ratings-data-service
+mvn package
+java -jar target\ratings-data-service-0.0.1-SNAPSHOT.jar
+
+http://localhost:8081/catalog/foo
+[{"name":"Name for ID 1234","desc":"Description","rating":3},{"name":"Name for ID 5678","desc":"Description","rating":4}]
+
+http://localhost:8082/movies/1234
+{"movieId":"1234","name":"Name for ID 1234"}
+http://localhost:8082/movies/5678
+{"movieId":"5678","name":"Name for ID 5678"}
+
+http://localhost:8083/ratingsdata/user/foo
+{"userId":"foo","ratings":[{"movieId":"1234","rating":3},{"movieId":"5678","rating":4}]}
+
+
+
+Spring Boot with Docker
+https://spring.io/guides/gs/spring-boot-docker/
+
+
+
+
+
+
+
+
+
